@@ -1,0 +1,11 @@
+// Merge into ~/.config/opencode/opencode.jsonc (stock 1.18.x until PR #24589 merges).
+// Paths are Windows — adjust or use ~ expansion where supported.
+{
+  "permission": {
+    "external_directory": {
+      "D:/Experiments/agent-notes/**": "allow",
+      "D:/Experiments/PersonalCursorFolder/Financial/software/open/**": "allow",
+      "D:/Experiments/opencode/**": "allow"
+    }
+  }
+}
