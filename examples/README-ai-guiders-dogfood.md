@@ -2,7 +2,11 @@
 
 Dogfood branch for [anomalyco/opencode#24589](https://github.com/anomalyco/opencode/pull/24589) — multi-root `.code-workspace` support.
 
-**Fork branch:** `feat/ai-guiders-multi-root-dogfood` (based on `cgarrot/feat/multi-root-workspaces-v2` + this example).
+**Fork branch:** `feat/ai-guiders-multi-root-dogfood`
+
+- PR [#24589](https://github.com/anomalyco/opencode/pull/24589) commits (`cgarrot/feat/multi-root-workspaces-v2`)
+- **`merge upstream/dev`** (2026-08-24) — not rebase; `git merge upstream/dev --allow-unrelated-histories -X theirs` (PR fork has unrelated git history vs `anomalyco/opencode`)
+- `examples/ai-guiders.code-workspace`
 
 ## Workspace file
 
@@ -41,9 +45,16 @@ Until #24589 merges, use global `~/.config/opencode/opencode.jsonc` snippet:
 
 CDP MCP (`cdp_*`) is not limited by OC project root; habitat still spans repos.
 
-## Rebase status (2026-08-24)
+## Merge status (2026-08-24)
 
-Cherry-pick of `d205fd3` + `a128590` onto current `upstream/dev` **conflicts heavily** (TUI moved to `packages/tui`, instance routes refactored). Needs maintainer-aligned port, not a blind rebase.
+| Attempt | Result |
+|---------|--------|
+| `git rebase upstream/dev` | Fail — unrelated histories + 11k commits |
+| `git merge upstream/dev` | Fail — unrelated histories |
+| `git merge upstream/dev --allow-unrelated-histories -X theirs` | **OK** — upstream session/core wins on conflicts; multi-root **new files** kept (`packages/opencode/src/workspace/*`, middleware, migrations, app workspace UI) |
+| Cherry-pick / `git apply` PR patch | Fail on moved TUI (`packages/tui`) |
+
+**Follow-up:** port `multiRootWorkspaceID` into refactored `packages/opencode/src/session/session.ts` + SDK client (lost to `-X theirs`). Tests `test/session/multi-root.test.ts` need that pass.
 
 **Upstream issue:** [#19515](https://github.com/anomalyco/opencode/issues/19515)
 
