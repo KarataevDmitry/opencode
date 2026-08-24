@@ -1,18 +1,14 @@
-import { BusEvent } from "@/bus/bus-event"
-import { Bus } from "@/bus"
 import path from "path"
 import { pathToFileURL, fileURLToPath } from "url"
 import { createMessageConnection, StreamMessageReader, StreamMessageWriter } from "vscode-jsonrpc/node"
 import type { Diagnostic as VSCodeDiagnostic } from "vscode-languageserver-types"
-import { Log } from "../util"
-import { Process } from "../util"
+import { Process } from "@/util/process"
 import { LANGUAGE_EXTENSIONS } from "./language"
-import z from "zod"
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
 import type * as LSPServer from "./server"
-import { NamedError } from "@opencode-ai/core/util/error"
 import { withTimeout } from "../util/timeout"
-import { Filesystem } from "../util"
+import { Filesystem } from "@/util/filesystem"
+import type { InstanceContext } from "@/project/instance-context"
 
 const DIAGNOSTICS_DEBOUNCE_MS = 150
 const DIAGNOSTICS_DOCUMENT_WAIT_TIMEOUT_MS = 5_000
@@ -26,28 +22,14 @@ const FILE_CHANGE_CREATED = 1
 const FILE_CHANGE_CHANGED = 2
 const TEXT_DOCUMENT_SYNC_INCREMENTAL = 2
 
-const log = Log.create({ service: "lsp.client" })
-
 export type Info = NonNullable<Awaited<ReturnType<typeof create>>>
 
 export type Diagnostic = VSCodeDiagnostic
 
-export const InitializeError = NamedError.create(
-  "LSPInitializeError",
-  z.object({
-    serverID: z.string(),
-  }),
-)
-
-export const Event = {
-  Diagnostics: BusEvent.define(
-    "lsp.client.diagnostics",
-    Schema.Struct({
-      serverID: Schema.String,
-      path: Schema.String,
-    }),
-  ),
-}
+export class InitializeError extends Schema.TaggedErrorClass<InitializeError>()("LSPInitializeError", {
+  serverID: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 type DocumentDiagnosticReport = {
   items?: Diagnostic[]
@@ -143,43 +125,15 @@ export async function create(input: {
   server: LSPServer.Handle
   root: string
   directory: string
-  /**
-   * Additional workspace folders to report to the LSP server. These are
-   * included in both the `initialize` request's `workspaceFolders` array and
-   * the `workspace/workspaceFolders` request response. The detected `root`
-   * remains the primary root (first entry, `rootUri`).
-   */
-  extraRoots?: readonly string[]
+  instance: InstanceContext
 }) {
-  const logger = log.clone().tag("serverID", input.serverID)
-  logger.info("starting client")
-
-  const folders = (() => {
-    const seen = new Set<string>()
-    const list: { name: string; uri: string }[] = []
-    const push = (p: string, name?: string) => {
-      if (seen.has(p)) return
-      seen.add(p)
-      list.push({ name: name ?? (path.basename(p) || "workspace"), uri: pathToFileURL(p).href })
-    }
-    push(input.root, "workspace")
-    for (const extra of input.extraRoots ?? []) push(extra)
-    return list
-  })()
+  const instance = input.instance
 
   const connection = createMessageConnection(
     new StreamMessageReader(input.server.process.stdout as any),
     new StreamMessageWriter(input.server.process.stdin as any),
   )
-  // Server stderr can contain both real errors and routine informational logs,
-  // which is normal stderr practice for some tools. Keep the raw stream at
-  // debug so users can opt in with --print-logs --log-level DEBUG without
-  // polluting normal logs.
-  input.server.process.stderr?.on("data", (data: Buffer) => {
-    const text = data.toString().trim()
-    if (text) logger.debug("server stderr", { text: text.slice(0, 1000) })
-  })
-
+  input.server.process.stderr?.resume()
   // --- Connection state ---
 
   const pushDiagnostics = new Map<string, Diagnostic[]>()
@@ -187,11 +141,12 @@ export async function create(input: {
   const published = new Map<string, { at: number; version?: number }>()
   const diagnosticRegistrations = new Map<string, CapabilityRegistration>()
   const registrationListeners = new Set<() => void>()
+  const diagnosticListeners = new Set<(input: { path: string; serverID: string }) => void>()
   const mergedDiagnostics = (filePath: string) =>
     dedupeDiagnostics([...(pushDiagnostics.get(filePath) ?? []), ...(pullDiagnostics.get(filePath) ?? [])])
   const updatePushDiagnostics = (filePath: string, next: Diagnostic[]) => {
     pushDiagnostics.set(filePath, next)
-    Bus.publish(Event.Diagnostics, { path: filePath, serverID: input.serverID })
+    for (const listener of diagnosticListeners) listener({ path: filePath, serverID: input.serverID })
   }
   const updatePullDiagnostics = (filePath: string, next: Diagnostic[]) => {
     pullDiagnostics.set(filePath, next)
@@ -205,11 +160,6 @@ export async function create(input: {
   connection.onNotification("textDocument/publishDiagnostics", (params) => {
     const filePath = getFilePath(params.uri)
     if (!filePath) return
-    logger.info("textDocument/publishDiagnostics", {
-      path: filePath,
-      count: params.diagnostics.length,
-      version: params.version,
-    })
     published.set(filePath, {
       at: Date.now(),
       version: typeof params.version === "number" ? params.version : undefined,
@@ -221,7 +171,6 @@ export async function create(input: {
     updatePushDiagnostics(filePath, params.diagnostics)
   })
   connection.onRequest("window/workDoneProgress/create", (params) => {
-    logger.info("window/workDoneProgress/create", params)
     return null
   })
   connection.onRequest("workspace/configuration", async (params) => {
@@ -248,18 +197,27 @@ export async function create(input: {
     }
     if (changed) emitRegistrationChange()
   })
-  connection.onRequest("workspace/workspaceFolders", async () => folders)
+  connection.onRequest("workspace/workspaceFolders", async () => [
+    {
+      name: "workspace",
+      uri: pathToFileURL(input.root).href,
+    },
+  ])
   connection.onRequest("workspace/diagnostic/refresh", async () => null)
   connection.listen()
 
   // --- Initialize handshake ---
 
-  logger.info("sending initialize", { folders: folders.map((f) => f.uri) })
   const initialized = await withTimeout(
     connection.sendRequest<{ capabilities?: ServerCapabilities }>("initialize", {
-      rootUri: folders[0].uri,
+      rootUri: pathToFileURL(input.root).href,
       processId: input.server.process.pid,
-      workspaceFolders: folders,
+      workspaceFolders: [
+        {
+          name: "workspace",
+          uri: pathToFileURL(input.root).href,
+        },
+      ],
       initializationOptions: {
         ...input.server.initialization,
       },
@@ -293,13 +251,7 @@ export async function create(input: {
     }),
     INITIALIZE_TIMEOUT_MS,
   ).catch((err) => {
-    logger.error("initialize error", { error: err })
-    throw new InitializeError(
-      { serverID: input.serverID },
-      {
-        cause: err,
-      },
-    )
+    throw new InitializeError({ serverID: input.serverID, cause: err })
   })
 
   const syncKind = getSyncKind(initialized.capabilities)
@@ -534,10 +486,12 @@ export async function create(input: {
       }
 
       timeoutTimer = setTimeout(() => finish(false), request.timeout)
-      unsub = Bus.subscribe(Event.Diagnostics, (event) => {
-        if (event.properties.path !== request.path || event.properties.serverID !== input.serverID) return
+      const listener = (event: { path: string; serverID: string }) => {
+        if (event.path !== request.path || event.serverID !== input.serverID) return
         schedule()
-      })
+      }
+      diagnosticListeners.add(listener)
+      unsub = () => diagnosticListeners.delete(listener)
       schedule()
     })
   }
@@ -611,7 +565,6 @@ export async function create(input: {
           // re-emit diagnostics when the content actually changes, so clearing
           // here would lose errors for no-op touchFile calls. Let the server's
           // next push/pull overwrite naturally.
-          logger.info("workspace/didChangeWatchedFiles", request)
           await connection.sendNotification("workspace/didChangeWatchedFiles", {
             changes: [
               {
@@ -623,10 +576,6 @@ export async function create(input: {
 
           const next = document.version + 1
           files[request.path] = { version: next, text }
-          logger.info("textDocument/didChange", {
-            path: request.path,
-            version: next,
-          })
           await connection.sendNotification("textDocument/didChange", {
             textDocument: {
               uri: pathToFileURL(request.path).href,
@@ -648,7 +597,6 @@ export async function create(input: {
           return next
         }
 
-        logger.info("workspace/didChangeWatchedFiles", request)
         await connection.sendNotification("workspace/didChangeWatchedFiles", {
           changes: [
             {
@@ -658,7 +606,6 @@ export async function create(input: {
           ],
         })
 
-        logger.info("textDocument/didOpen", request)
         pushDiagnostics.delete(request.path)
         pullDiagnostics.delete(request.path)
         await connection.sendNotification("textDocument/didOpen", {
@@ -684,11 +631,6 @@ export async function create(input: {
       const normalizedPath = Filesystem.normalizePath(
         path.isAbsolute(request.path) ? request.path : path.resolve(input.directory, request.path),
       )
-      logger.info("waiting for diagnostics", {
-        path: normalizedPath,
-        mode: request.mode ?? "full",
-        version: request.version,
-      })
       if (request.mode === "document") {
         await waitForDocumentDiagnostics({ path: normalizedPath, version: request.version, after: request.after })
         return
@@ -696,15 +638,13 @@ export async function create(input: {
       await waitForFullDiagnostics({ path: normalizedPath, version: request.version, after: request.after })
     },
     async shutdown() {
-      logger.info("shutting down")
       connection.end()
       connection.dispose()
       await Process.stop(input.server.process)
-      logger.info("shutdown")
     },
   }
 
-  logger.info("initialized")
-
   return result
 }
+
+export * as LSPClient from "./client"

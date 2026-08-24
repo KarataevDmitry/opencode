@@ -203,10 +203,6 @@ export default defineConfig({
           link: "windows-wsl",
         },
         {
-          label: "Workspaces",
-          link: "workspace",
-        },
-        {
           label: "Usage",
           translations: {
             en: "Usage",
@@ -263,10 +259,12 @@ export default defineConfig({
             "commands",
             "formatters",
             "permissions",
+            "policies",
             "lsp",
             "mcp-servers",
             "acp",
             "skills",
+            "references",
             "custom-tools",
           ],
         },
@@ -301,6 +299,7 @@ export default defineConfig({
         Head: "./src/components/Head.astro",
         Header: "./src/components/Header.astro",
         Footer: "./src/components/Footer.astro",
+        LanguageSelect: "./src/components/LanguageSelect.astro",
         SiteTitle: "./src/components/SiteTitle.astro",
       },
       plugins: [
