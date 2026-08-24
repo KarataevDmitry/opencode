@@ -9,6 +9,14 @@
       "name": "agent-notes"
     },
     {
+      "path": "D:/Experiments/PersonalCursorFolder",
+      "name": "casa-dev"
+    },
+    {
+      "path": "D:/Experiments/PersonalCursorFolder/Financial/software/open/casa-ontology-payload",
+      "name": "casa-ontology-payload"
+    },
+    {
       "path": "D:/Experiments/PersonalCursorFolder/Financial/software/open/cdp-mcp",
       "name": "cdp-mcp"
     },

@@ -20,8 +20,12 @@ Folders (adjust paths if your layout differs):
 |------|------|
 | opencode | `D:/Experiments/opencode` |
 | agent-notes | `D:/Experiments/agent-notes` |
+| casa-dev | `D:/Experiments/PersonalCursorFolder` (same roots as Cursor workspace **casa-dev**) |
+| casa-ontology-payload | `D:/Experiments/PersonalCursorFolder/Financial/software/open/casa-ontology-payload` |
 | cdp-mcp | `D:/Experiments/PersonalCursorFolder/Financial/software/open/cdp-mcp` |
 | guiders-core | `D:/Experiments/PersonalCursorFolder/Financial/software/open/guiders-core` |
+
+Not in this workspace: **SSRepo** (`D:/SSRepo`) — Harvester / EDWH work contour, separate from AI Guiders dogfood.
 
 VS Code / Cursor can open the same file for parity.
 
@@ -64,7 +68,7 @@ CDP MCP (`cdp_*`) is not limited by OC project root; habitat still spans repos.
 
 Post to PR #24589:
 
-1. Import `ai-guiders.code-workspace` — all four roots visible in `@` picker?
+1. Import `ai-guiders.code-workspace` — all six roots visible in `@` picker?
 2. Session across agent-notes + cdp-mcp — `external_directory` prompts gone?
 3. CDP-first seat (Fathom): subagent + `cdp_buffer` on non-primary root?
 4. Gaps: git diff per repo (#34398), LSP multi-root?
