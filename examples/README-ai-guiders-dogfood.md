@@ -58,7 +58,7 @@ CDP MCP (`cdp_*`) is not limited by OC project root; habitat still spans repos.
 | `git merge upstream/dev --allow-unrelated-histories -X theirs` | **OK** — upstream session/core wins on conflicts; multi-root **new files** kept (`packages/opencode/src/workspace/*`, middleware, migrations, app workspace UI) |
 | Cherry-pick / `git apply` PR patch | Fail on moved TUI (`packages/tui`) |
 
-**Follow-up:** port `multiRootWorkspaceID` into refactored `packages/opencode/src/session/session.ts` + SDK client (lost to `-X theirs`). Tests `test/session/multi-root.test.ts` need that pass.
+**Follow-up:** port `multiRootWorkspaceID` into refactored `packages/opencode/src/session/session.ts` + SDK client — **done** on this branch (`session.ts`, `instance-state.ts`, `sdk/js/src/v2/client.ts`).
 
 **Upstream issue:** [#19515](https://github.com/anomalyco/opencode/issues/19515)
 

@@ -7,27 +7,11 @@ import { Log } from "@/util"
 import { LocalContext } from "../util"
 import * as Project from "./project"
 import { WorkspaceContext } from "@/control-plane/workspace-context"
+import type { InstanceContext as BaseInstanceContext } from "./instance-context"
 import type { MultiRootWorkspaceID } from "@/workspace/schema"
 
-export interface InstanceContext {
-  directory: string
-  worktree: string
-  project: Project.Info
-  /**
-   * Full list of directories available to this instance.
-   * Always includes `directory` as the first entry. For multi-root workspaces,
-   * extra folders are appended. Tools use this via `containsPath` to determine
-   * whether a path is internal (no permission prompt) or external.
-   */
+export interface InstanceContext extends BaseInstanceContext {
   roots: string[]
-  /**
-   * When the instance was created inside a multi-root workspace session, this
-   * carries the workspace id that was resolved at middleware time. The set of
-   * `roots` above is derived from this workspace's folder list at resolution
-   * time; it is re-resolved on every request so folder add/remove is reflected
-   * at the next request.
-   */
-  multiRootWorkspaceID?: MultiRootWorkspaceID
 }
 
 const context = LocalContext.create<InstanceContext>("instance")

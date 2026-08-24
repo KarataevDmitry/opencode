@@ -1,5 +1,6 @@
 import { Effect, ScopedCache, Scope } from "effect"
 import type { InstanceContext } from "@/project/instance-context"
+import { Instance } from "@/project/instance"
 import { InstanceRef, WorkspaceRef } from "./instance-ref"
 import { registerDisposer } from "./instance-registry"
 import { WorkspaceContext } from "@/control-plane/workspace-context"
@@ -12,9 +13,13 @@ export interface InstanceState<A, E = never, R = never> {
 }
 
 export const context = Effect.gen(function* () {
-  const ctx = yield* InstanceRef
-  if (!ctx) return yield* Effect.die(new Error("InstanceRef not provided"))
-  return ctx
+  const ref = yield* InstanceRef
+  if (ref) return ref
+  try {
+    return Instance.current
+  } catch {
+    return yield* Effect.die(new Error("InstanceRef not provided"))
+  }
 })
 
 export const workspaceID = Effect.gen(function* () {
@@ -22,6 +27,8 @@ export const workspaceID = Effect.gen(function* () {
 })
 
 export const directory = Effect.map(context, (ctx) => ctx.directory)
+
+export const multiRootWorkspaceID = Effect.map(context, (ctx) => ctx.multiRootWorkspaceID)
 
 export const make = <A, E = never, R = never>(
   init: (ctx: InstanceContext) => Effect.Effect<A, E, R | Scope.Scope>,

@@ -34,6 +34,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { Snapshot } from "@/snapshot"
 import { ProjectV2 } from "@opencode-ai/core/project"
 import { WorkspaceV2 } from "@opencode-ai/core/workspace"
+import type { MultiRootWorkspaceID } from "@/workspace/schema"
 import { SessionID, MessageID, PartID } from "./schema"
 
 import type { Provider } from "@/provider/provider"
@@ -80,6 +81,7 @@ export function fromRow(row: SessionRow): Info {
     slug: row.slug,
     projectID: row.project_id,
     workspaceID: row.workspace_id ?? undefined,
+    multiRootWorkspaceID: row.multi_root_workspace_id ?? undefined,
     directory: row.directory,
     path: row.path ?? undefined,
     parentID: row.parent_id ?? undefined,
@@ -122,6 +124,7 @@ export function toRow(info: Info) {
     id: info.id,
     project_id: info.projectID,
     workspace_id: info.workspaceID,
+    multi_root_workspace_id: info.multiRootWorkspaceID,
     parent_id: info.parentID,
     slug: info.slug,
     directory: info.directory,
@@ -226,6 +229,7 @@ export const Info = Schema.Struct({
   slug: Schema.String,
   projectID: ProjectV2.ID,
   workspaceID: optional(WorkspaceV2.ID),
+  multiRootWorkspaceID: optional(MultiRootWorkspaceID),
   directory: Schema.String,
   path: optional(Schema.String),
   parentID: optional(SessionID),
@@ -266,6 +270,7 @@ export const CreateInput = Schema.optional(
     metadata: Schema.optional(Metadata),
     permission: Schema.optional(PermissionV1.Ruleset),
     workspaceID: Schema.optional(WorkspaceV2.ID),
+    multiRootWorkspaceID: Schema.optional(MultiRootWorkspaceID),
   }),
 )
 export type CreateInput = Types.DeepMutable<Schema.Schema.Type<typeof CreateInput>>
@@ -304,6 +309,7 @@ export type ListInput = {
   scope?: "project"
   path?: string
   workspaceID?: WorkspaceV2.ID
+  multiRootWorkspaceID?: MultiRootWorkspaceID
   roots?: boolean
   start?: number
   search?: string
@@ -312,6 +318,7 @@ export type ListInput = {
 
 export type GlobalListInput = {
   directory?: string
+  multiRootWorkspaceID?: MultiRootWorkspaceID
   roots?: boolean
   start?: number
   cursor?: number
@@ -421,6 +428,7 @@ export interface Interface {
     metadata?: typeof Metadata.Type
     permission?: PermissionV1.Ruleset
     workspaceID?: WorkspaceV2.ID
+    multiRootWorkspaceID?: MultiRootWorkspaceID
   }) => Effect.Effect<Info>
   readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info, NotFound>
   readonly touch: (sessionID: SessionID) => Effect.Effect<void>
@@ -503,6 +511,7 @@ const layer: Layer.Layer<
       model?: Schema.Schema.Type<typeof Model>
       parentID?: SessionID
       workspaceID?: WorkspaceV2.ID
+      multiRootWorkspaceID?: MultiRootWorkspaceID
       directory: string
       path?: string
       metadata?: typeof Metadata.Type
@@ -517,6 +526,7 @@ const layer: Layer.Layer<
         directory: input.directory,
         path: input.path,
         workspaceID: input.workspaceID,
+        multiRootWorkspaceID: input.multiRootWorkspaceID,
         parentID: input.parentID,
         title: input.title ?? (input.parentID ? childTitlePrefix : parentTitlePrefix) + new Date().toISOString(),
         agent: input.agent,
@@ -555,6 +565,9 @@ const layer: Layer.Layer<
     const listGlobal = Effect.fn("Session.listGlobal")(function* (input?: GlobalListInput) {
       const conditions: SQL[] = []
       if (input?.directory) conditions.push(eq(SessionTable.directory, input.directory))
+      if (input?.multiRootWorkspaceID) {
+        conditions.push(eq(SessionTable.multi_root_workspace_id, input.multiRootWorkspaceID))
+      }
       if (input?.roots) conditions.push(isNull(SessionTable.parent_id))
       if (input?.start) conditions.push(gte(SessionTable.time_updated, input.start))
       if (input?.cursor) conditions.push(lt(SessionTable.time_updated, input.cursor))
@@ -672,9 +685,11 @@ const layer: Layer.Layer<
       metadata?: typeof Metadata.Type
       permission?: PermissionV1.Ruleset
       workspaceID?: WorkspaceV2.ID
+      multiRootWorkspaceID?: MultiRootWorkspaceID
     }) {
       const ctx = yield* InstanceState.context
       const workspace = yield* InstanceState.workspaceID
+      const multiRoot = yield* InstanceState.multiRootWorkspaceID
       return yield* createNext({
         parentID: input?.parentID,
         directory: ctx.directory,
@@ -685,6 +700,7 @@ const layer: Layer.Layer<
         metadata: input?.metadata,
         permission: input?.permission,
         workspaceID: input?.workspaceID ?? workspace,
+        multiRootWorkspaceID: input?.multiRootWorkspaceID ?? multiRoot,
       })
     })
 
@@ -696,6 +712,7 @@ const layer: Layer.Layer<
         directory: ctx.directory,
         path: sessionPath(ctx.worktree, ctx.directory),
         workspaceID: original.workspaceID,
+        multiRootWorkspaceID: original.multiRootWorkspaceID,
         title,
         metadata: structuredClone(original.metadata),
       })
@@ -963,6 +980,9 @@ function listByProject(
 
   if (input.workspaceID) {
     conditions.push(eq(SessionTable.workspace_id, input.workspaceID))
+  }
+  if (input.multiRootWorkspaceID) {
+    conditions.push(eq(SessionTable.multi_root_workspace_id, input.multiRootWorkspaceID))
   }
   if (input.path !== undefined) {
     if (input.path) {
